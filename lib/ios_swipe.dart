@@ -7,8 +7,10 @@ CustomTransitionPage<T> buildIosSwipeTransition<T>({
   required GoRouterState state,
   bool maintainState = true,
   bool fullscreenDialog = false,
+  int swipeDuration = 350,
+
 }) {
-  const Duration transitionDuration = Duration(milliseconds: 350);
+  Duration transitionDuration = Duration(milliseconds: swipeDuration);
   return CustomTransitionPage<T>(
     key: state.pageKey,
     name: state.name,
