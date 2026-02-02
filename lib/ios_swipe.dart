@@ -2,13 +2,25 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+/// Direction for the swipe-to-dismiss gesture.
+enum SwipeDirection {
+  /// Swipe from left to right (default iOS-style back gesture)
+  leftToRight,
+
+  /// Swipe from right to left
+  rightToLeft,
+
+  /// Allow swiping in both directions
+  both,
+}
+
 CustomTransitionPage<T> buildIosSwipeTransition<T>({
   required Widget child,
   required GoRouterState state,
   bool maintainState = true,
   bool fullscreenDialog = false,
   int swipeDuration = 350,
-
+  SwipeDirection swipeDirection = SwipeDirection.leftToRight,
 }) {
   Duration transitionDuration = Duration(milliseconds: swipeDuration);
   return CustomTransitionPage<T>(
@@ -23,6 +35,7 @@ CustomTransitionPage<T> buildIosSwipeTransition<T>({
         transitionDuration: transitionDuration,
         routeAnimation: animation as ProxyAnimation,
         secondaryAnimation: secondaryAnimation,
+        swipeDirection: swipeDirection,
         child: child,
       );
     },
@@ -35,12 +48,14 @@ class _IosSwipeTransition extends StatefulWidget {
     required this.secondaryAnimation,
     required this.child,
     required this.transitionDuration,
+    required this.swipeDirection,
   });
 
   final ProxyAnimation routeAnimation;
   final Animation<double> secondaryAnimation;
   final Widget child;
   final Duration transitionDuration;
+  final SwipeDirection swipeDirection;
 
   @override
   State<_IosSwipeTransition> createState() => _IosSwipeTransitionState();
@@ -50,6 +65,10 @@ class _IosSwipeTransitionState extends State<_IosSwipeTransition> {
   bool _isDragging = false;
   bool _isPopping = false;
   bool _isAnimating = false;
+
+  /// Tracks the current drag direction during a gesture.
+  /// Positive = left-to-right, Negative = right-to-left
+  double _currentDragDirection = 0;
 
   /// Lazy access to the underlying animation controller.
   ///
@@ -122,8 +141,22 @@ class _IosSwipeTransitionState extends State<_IosSwipeTransition> {
             final radius = anim == 1.0 ? 0.0 : topPadding;
 
             // Calculate horizontal offset with parallax effect
-            final offsetX = (1.0 - anim) * width;
-            final compensation = 0.25 * width * anim2;
+            // Direction depends on swipe direction setting
+            double offsetX;
+            double compensation;
+
+            if (widget.swipeDirection == SwipeDirection.rightToLeft ||
+                (widget.swipeDirection == SwipeDirection.both &&
+                    _currentDragDirection < 0)) {
+              // Right-to-left: page slides out to the left
+              offsetX = -(1.0 - anim) * width;
+              compensation = -0.25 * width * anim2;
+            } else {
+              // Left-to-right (default iOS): page slides out to the right
+              offsetX = (1.0 - anim) * width;
+              compensation = 0.25 * width * anim2;
+            }
+
             final finalOffset = offsetX - compensation;
 
             return HeroMode(
@@ -201,8 +234,38 @@ class _IosSwipeTransitionState extends State<_IosSwipeTransition> {
     final delta = details.primaryDelta ?? 0.0;
     final fraction = delta / width;
 
+    // Track drag direction (accumulate to determine overall direction)
+    _currentDragDirection += delta;
+
+    // Determine if this drag direction is valid based on swipeDirection setting
+    final isLeftToRight = delta > 0;
+    final isRightToLeft = delta < 0;
+
+    bool isValidDirection = false;
+    switch (widget.swipeDirection) {
+      case SwipeDirection.leftToRight:
+        isValidDirection = isLeftToRight || controller.value < 1.0;
+        break;
+      case SwipeDirection.rightToLeft:
+        isValidDirection = isRightToLeft || controller.value < 1.0;
+        break;
+      case SwipeDirection.both:
+        isValidDirection = true;
+        break;
+    }
+
+    if (!isValidDirection) return;
+
+    // For right-to-left swipe, invert the fraction
+    final adjustedFraction =
+        (widget.swipeDirection == SwipeDirection.rightToLeft ||
+                (widget.swipeDirection == SwipeDirection.both &&
+                    _currentDragDirection < 0))
+            ? fraction // Right-to-left: positive delta decreases animation
+            : -fraction; // Left-to-right: positive delta decreases animation (original behavior)
+
     // Update controller value based on drag distance
-    controller.value = (controller.value - fraction).clamp(0.0, 1.0);
+    controller.value = (controller.value + adjustedFraction).clamp(0.0, 1.0);
   }
 
   /// Handles the end of a horizontal drag gesture.
@@ -219,6 +282,7 @@ class _IosSwipeTransitionState extends State<_IosSwipeTransition> {
     // Block if already processing a gesture
     if (_isPopping || _isAnimating) {
       _isDragging = false;
+      _currentDragDirection = 0;
       return;
     }
 
@@ -228,14 +292,30 @@ class _IosSwipeTransitionState extends State<_IosSwipeTransition> {
     final velocity = details.velocity.pixelsPerSecond.dx;
     final progress = controller.value;
 
-    // Pop if: fast swipe (>300px/s) OR dragged past 30% point
-    final shouldPop = velocity > 300 || progress < 0.7;
+    // Determine if velocity direction matches the allowed swipe direction
+    bool velocityMatchesDirection = false;
+    switch (widget.swipeDirection) {
+      case SwipeDirection.leftToRight:
+        velocityMatchesDirection = velocity > 300;
+        break;
+      case SwipeDirection.rightToLeft:
+        velocityMatchesDirection = velocity < -300;
+        break;
+      case SwipeDirection.both:
+        velocityMatchesDirection = velocity.abs() > 300;
+        break;
+    }
+
+    // Pop if: fast swipe in correct direction OR dragged past 30% point
+    final shouldPop = velocityMatchesDirection || progress < 0.7;
 
     if (shouldPop) {
       _performPop(context, controller);
     } else {
       _cancelPop(context, controller);
     }
+
+    _currentDragDirection = 0;
   }
 
   /// Handles cancellation of a horizontal drag gesture.
@@ -245,6 +325,7 @@ class _IosSwipeTransitionState extends State<_IosSwipeTransition> {
   void _handleDragCancel(BuildContext context) {
     if (_isPopping || _isAnimating) {
       _isDragging = false;
+      _currentDragDirection = 0;
       return;
     }
 
@@ -252,6 +333,7 @@ class _IosSwipeTransitionState extends State<_IosSwipeTransition> {
     if (controller == null || !_isDragging) return;
 
     _cancelPop(context, controller);
+    _currentDragDirection = 0;
   }
 
   /// Performs the pop operation with animation.
