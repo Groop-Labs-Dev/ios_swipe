@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -189,17 +190,19 @@ class _IosSwipeTransitionState extends State<_IosSwipeTransition> {
 Widget _buildSwipeGesture(BuildContext context, Widget child, double width) {
   if (!_canSwipe) return child;
 
-  return GestureDetector(
+  return RawGestureDetector(
     behavior: HitTestBehavior.translucent,
-    onHorizontalDragStart: (details) {
-      // Only start drag if touch is within edge zone from left
-      if (details.globalPosition.dx <= widget.edgeWidth) {
-        _handleDragStart(context);
-      }
+    gestures: {
+      _EdgePanGestureRecognizer: GestureRecognizerFactoryWithHandlers<_EdgePanGestureRecognizer>(
+        () => _EdgePanGestureRecognizer(edgeWidth: widget.edgeWidth),
+        (_EdgePanGestureRecognizer instance) {
+          instance.onStart = (details) => _handleDragStart(context);
+          instance.onUpdate = (details) => _handleDragUpdate(details, width);
+          instance.onEnd = (details) => _handleDragEnd(context, details);
+          instance.onCancel = () => _handleDragCancel(context);
+        },
+      ),
     },
-    onHorizontalDragUpdate: (details) => _handleDragUpdate(details, width),
-    onHorizontalDragEnd: (details) => _handleDragEnd(context, details),
-    onHorizontalDragCancel: () => _handleDragCancel(context),
     child: child,
   );
 }
@@ -422,5 +425,20 @@ Widget _buildSwipeGesture(BuildContext context, Widget child, double width) {
           // Notify navigator that the user gesture has completed
           Navigator.of(context).didStopUserGesture();
         });
+  }
+}
+
+class _EdgePanGestureRecognizer extends HorizontalDragGestureRecognizer {
+  _EdgePanGestureRecognizer({required this.edgeWidth});
+
+  final double edgeWidth;
+
+  @override
+  bool isPointerAllowed(PointerEvent event) {
+    // Only allow gestures that start within edgeWidth of the left edge
+    if (event.position.dx > edgeWidth) {
+      return false;
+    }
+    return super.isPointerAllowed(event);
   }
 }
