@@ -21,6 +21,7 @@ CustomTransitionPage<T> buildIosSwipeTransition<T>({
   bool fullscreenDialog = false,
   int swipeDuration = 350,
   SwipeDirection swipeDirection = SwipeDirection.leftToRight,
+  double edgeWidth = 20.0
 }) {
   Duration transitionDuration = Duration(milliseconds: swipeDuration);
   return CustomTransitionPage<T>(
@@ -36,6 +37,7 @@ CustomTransitionPage<T> buildIosSwipeTransition<T>({
         routeAnimation: animation as ProxyAnimation,
         secondaryAnimation: secondaryAnimation,
         swipeDirection: swipeDirection,
+        edgeWidth: edgeWidth,
         child: child,
       );
     },
@@ -49,6 +51,7 @@ class _IosSwipeTransition extends StatefulWidget {
     required this.child,
     required this.transitionDuration,
     required this.swipeDirection,
+    required this.edgeWidth
   });
 
   final ProxyAnimation routeAnimation;
@@ -56,6 +59,7 @@ class _IosSwipeTransition extends StatefulWidget {
   final Widget child;
   final Duration transitionDuration;
   final SwipeDirection swipeDirection;
+  final double edgeWidth;
 
   @override
   State<_IosSwipeTransition> createState() => _IosSwipeTransitionState();
@@ -182,18 +186,23 @@ class _IosSwipeTransitionState extends State<_IosSwipeTransition> {
   /// transition animation and prevents race conditions.
   ///
   /// Returns the [child] unchanged if [_canSwipe] is false.
-  Widget _buildSwipeGesture(BuildContext context, Widget child, double width) {
-    if (!_canSwipe) return child;
+Widget _buildSwipeGesture(BuildContext context, Widget child, double width) {
+  if (!_canSwipe) return child;
 
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onHorizontalDragStart: (details) => _handleDragStart(context),
-      onHorizontalDragUpdate: (details) => _handleDragUpdate(details, width),
-      onHorizontalDragEnd: (details) => _handleDragEnd(context, details),
-      onHorizontalDragCancel: () => _handleDragCancel(context),
-      child: child,
-    );
-  }
+  return GestureDetector(
+    behavior: HitTestBehavior.translucent,
+    onHorizontalDragStart: (details) {
+      // Only start drag if touch is within edge zone from left
+      if (details.globalPosition.dx <= widget.edgeWidth) {
+        _handleDragStart(context);
+      }
+    },
+    onHorizontalDragUpdate: (details) => _handleDragUpdate(details, width),
+    onHorizontalDragEnd: (details) => _handleDragEnd(context, details),
+    onHorizontalDragCancel: () => _handleDragCancel(context),
+    child: child,
+  );
+}
 
   /// Handles the start of a horizontal drag gesture.
   ///
