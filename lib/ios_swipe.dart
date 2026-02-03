@@ -1,5 +1,4 @@
 import 'dart:ui';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -190,20 +189,24 @@ class _IosSwipeTransitionState extends State<_IosSwipeTransition> {
 Widget _buildSwipeGesture(BuildContext context, Widget child, double width) {
   if (!_canSwipe) return child;
 
-  return RawGestureDetector(
-    behavior: HitTestBehavior.translucent,
-    gestures: {
-      _EdgePanGestureRecognizer: GestureRecognizerFactoryWithHandlers<_EdgePanGestureRecognizer>(
-        () => _EdgePanGestureRecognizer(edgeWidth: widget.edgeWidth),
-        (_EdgePanGestureRecognizer instance) {
-          instance.onStart = (details) => _handleDragStart(context);
-          instance.onUpdate = (details) => _handleDragUpdate(details, width);
-          instance.onEnd = (details) => _handleDragEnd(context, details);
-          instance.onCancel = () => _handleDragCancel(context);
-        },
+  return Stack(
+    children: [
+      child,
+      // Invisible edge detector on the left side
+      Positioned(
+        left: 0,
+        top: 0,
+        bottom: 0,
+        width: widget.edgeWidth,
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onHorizontalDragStart: (details) => _handleDragStart(context),
+          onHorizontalDragUpdate: (details) => _handleDragUpdate(details, width),
+          onHorizontalDragEnd: (details) => _handleDragEnd(context, details),
+          onHorizontalDragCancel: () => _handleDragCancel(context),
+        ),
       ),
-    },
-    child: child,
+    ],
   );
 }
 
@@ -428,17 +431,3 @@ Widget _buildSwipeGesture(BuildContext context, Widget child, double width) {
   }
 }
 
-class _EdgePanGestureRecognizer extends HorizontalDragGestureRecognizer {
-  _EdgePanGestureRecognizer({required this.edgeWidth});
-
-  final double edgeWidth;
-
-  @override
-  bool isPointerAllowed(PointerEvent event) {
-    // Only allow gestures that start within edgeWidth of the left edge
-    if (event.position.dx > edgeWidth) {
-      return false;
-    }
-    return super.isPointerAllowed(event);
-  }
-}
